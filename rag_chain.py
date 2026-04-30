@@ -21,7 +21,7 @@ from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 FAISS_DIR   = "faiss_index"
 EMBED_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
 LLM_MODEL   = "gpt-4o-mini"
-RETRIEVER_K = 5
+RETRIEVER_K = 8
 TEMPERATURE = 0.2
 
 
@@ -87,22 +87,28 @@ def build_chain():
     llm       = ChatOpenAI(model=LLM_MODEL, temperature=TEMPERATURE)
     retriever = _build_retriever()
 
-    # ── Prompt 1: condense follow-up questions into standalone queries ─────
+    # ── Prompt 1: always rephrase for retrieval ───────────────────────
+    # Runs on EVERY query (not just follow-ups) so informal terms like
+    # "Thakur", "Naren", "Holy Mother" are expanded before retrieval.
     condense_prompt = ChatPromptTemplate.from_messages([
         ("system",
-         "Given the conversation history and the latest user question, "
-         "rewrite the question as a fully self-contained query. "
-         "Do NOT answer it — only rephrase."),
+         "You are a query expander for a Sri Ramakrishna knowledge base. "
+         "Rewrite the user question as a clear, self-contained search query. "
+         "Apply these name mappings: "
+         "'Thakur' = Sri Ramakrishna, "
+         "'Naren' or 'Narendranath' = Swami Vivekananda, "
+         "'Holy Mother' or 'Ma' = Sarada Devi, "
+         "'M' or 'Master Mahashay' = Mahendranath Gupta. "
+         "If there is conversation history, incorporate it to make the query standalone. "
+         "Return ONLY the expanded query, nothing else."),
         MessagesPlaceholder("chat_history"),
         ("human", "{input}"),
     ])
     condense_chain = condense_prompt | llm | StrOutputParser()
 
     def get_standalone_question(inputs: dict) -> str:
-        """Return a standalone question, condensing if history exists."""
-        if inputs.get("chat_history"):
-            return condense_chain.invoke(inputs)
-        return inputs["input"]
+        """Always rephrase through LLM for better retrieval."""
+        return condense_chain.invoke(inputs)
 
     # ── Prompt 2: answer strictly from retrieved context ──────────────────
     qa_prompt = ChatPromptTemplate.from_messages([
