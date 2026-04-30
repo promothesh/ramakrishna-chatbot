@@ -11,19 +11,18 @@ import re
 
 from langchain_openai import ChatOpenAI
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 
 # ── Config ────────────────────────────────────────────────────────────────────
-CHROMA_DIR      = "chroma_db"
-COLLECTION_NAME = "ramakrishna_books"
-EMBED_MODEL     = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-LLM_MODEL       = "gpt-4o-mini"
-RETRIEVER_K     = 5        # number of chunks to retrieve per query
-TEMPERATURE     = 0.2
+FAISS_DIR   = "faiss_index"
+EMBED_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+LLM_MODEL   = "gpt-4o-mini"
+RETRIEVER_K = 5
+TEMPERATURE = 0.2
 
 
 # ── Load API key from .Renviron (R environment) or .env ──────────────────────
@@ -59,64 +58,17 @@ def _parse_env_file(path: str):
 
 
 # ── Build retriever ───────────────────────────────────────────────────────────
-def _ensure_ingested(embeddings):
-    """
-    If the ChromaDB collection is missing or empty (e.g. first deploy on
-    Streamlit Cloud where Windows-built binaries are incompatible), run the
-    ingestion pipeline automatically.
-    """
-    import glob
-    from langchain_community.document_loaders import PyPDFLoader, TextLoader
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
-    import shutil
-
-    try:
-        vs = Chroma(
-            persist_directory=CHROMA_DIR,
-            embedding_function=embeddings,
-            collection_name=COLLECTION_NAME,
-        )
-        count = vs._collection.count()
-    except Exception:
-        count = 0
-
-    if count > 0:
-        return vs   # already populated
-
-    print("ChromaDB empty — running ingestion…")
-    if os.path.exists(CHROMA_DIR):
-        shutil.rmtree(CHROMA_DIR)
-
-    docs = []
-    for path in glob.glob(os.path.join("docs", "*.pdf")):
-        docs.extend(PyPDFLoader(path).load())
-    for path in glob.glob(os.path.join("docs", "*.txt")):
-        docs.extend(TextLoader(path, encoding="utf-8").load())
-
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=600, chunk_overlap=80,
-        separators=["\n\n", "\n", ". ", " ", ""],
-    )
-    chunks = splitter.split_documents(docs)
-    print(f"Ingesting {len(chunks):,} chunks…")
-
-    vs = Chroma.from_documents(
-        documents=chunks,
-        embedding=embeddings,
-        persist_directory=CHROMA_DIR,
-        collection_name=COLLECTION_NAME,
-    )
-    print("Ingestion complete.")
-    return vs
-
-
 def _build_retriever():
     embeddings = HuggingFaceEmbeddings(
         model_name=EMBED_MODEL,
         model_kwargs={"device": "cpu"},
         encode_kwargs={"normalize_embeddings": True},
     )
-    vectorstore = _ensure_ingested(embeddings)
+    vectorstore = FAISS.load_local(
+        FAISS_DIR,
+        embeddings,
+        allow_dangerous_deserialization=True,
+    )
     return vectorstore.as_retriever(
         search_type="similarity",
         search_kwargs={"k": RETRIEVER_K},
