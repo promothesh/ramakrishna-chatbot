@@ -21,7 +21,7 @@ from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 FAISS_DIR   = "faiss_index"
 EMBED_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
 LLM_MODEL   = "gpt-4o-mini"
-RETRIEVER_K = 8
+RETRIEVER_K = 6
 TEMPERATURE = 0.2
 
 

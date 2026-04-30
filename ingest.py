@@ -19,8 +19,8 @@ from langchain_community.vectorstores import FAISS
 DOCS_DIR    = "docs"
 FAISS_DIR   = "faiss_index"
 EMBED_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-CHUNK_SIZE  = 600
-CHUNK_OVERLAP = 80
+CHUNK_SIZE    = 1200
+CHUNK_OVERLAP = 150
 
 # ── Load documents ────────────────────────────────────────────────────────────
 def load_documents(docs_dir: str):
