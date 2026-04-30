@@ -59,17 +59,64 @@ def _parse_env_file(path: str):
 
 
 # ── Build retriever ───────────────────────────────────────────────────────────
+def _ensure_ingested(embeddings):
+    """
+    If the ChromaDB collection is missing or empty (e.g. first deploy on
+    Streamlit Cloud where Windows-built binaries are incompatible), run the
+    ingestion pipeline automatically.
+    """
+    import glob
+    from langchain_community.document_loaders import PyPDFLoader, TextLoader
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    import shutil
+
+    try:
+        vs = Chroma(
+            persist_directory=CHROMA_DIR,
+            embedding_function=embeddings,
+            collection_name=COLLECTION_NAME,
+        )
+        count = vs._collection.count()
+    except Exception:
+        count = 0
+
+    if count > 0:
+        return vs   # already populated
+
+    print("ChromaDB empty — running ingestion…")
+    if os.path.exists(CHROMA_DIR):
+        shutil.rmtree(CHROMA_DIR)
+
+    docs = []
+    for path in glob.glob(os.path.join("docs", "*.pdf")):
+        docs.extend(PyPDFLoader(path).load())
+    for path in glob.glob(os.path.join("docs", "*.txt")):
+        docs.extend(TextLoader(path, encoding="utf-8").load())
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=600, chunk_overlap=80,
+        separators=["\n\n", "\n", ". ", " ", ""],
+    )
+    chunks = splitter.split_documents(docs)
+    print(f"Ingesting {len(chunks):,} chunks…")
+
+    vs = Chroma.from_documents(
+        documents=chunks,
+        embedding=embeddings,
+        persist_directory=CHROMA_DIR,
+        collection_name=COLLECTION_NAME,
+    )
+    print("Ingestion complete.")
+    return vs
+
+
 def _build_retriever():
     embeddings = HuggingFaceEmbeddings(
         model_name=EMBED_MODEL,
         model_kwargs={"device": "cpu"},
         encode_kwargs={"normalize_embeddings": True},
     )
-    vectorstore = Chroma(
-        persist_directory=CHROMA_DIR,
-        embedding_function=embeddings,
-        collection_name=COLLECTION_NAME,
-    )
+    vectorstore = _ensure_ingested(embeddings)
     return vectorstore.as_retriever(
         search_type="similarity",
         search_kwargs={"k": RETRIEVER_K},

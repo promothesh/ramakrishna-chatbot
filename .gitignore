@@ -1,6 +1,9 @@
 # Secrets
 .env
 
+# Vector store (rebuilt automatically on first run)
+chroma_db/
+
 # Python
 __pycache__/
 *.py[cod]
