@@ -10,10 +10,12 @@ Run once (or re-run whenever docs change):
 import os
 import glob
 import time
+import re
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document
 
 # ── Config ────────────────────────────────────────────────────────────────────
 DOCS_DIR    = "docs"
@@ -46,13 +48,77 @@ def load_documents(docs_dir: str):
 
 
 # ── Split ─────────────────────────────────────────────────────────────────────
+def is_heading_line(line: str) -> bool:
+    s = line.strip()
+    if not s:
+        return False
+    if re.match(r"^VOLUME[_ /0-9A-Z-]+$", s):
+        return True
+    if re.match(r"^\d+(?:\.\d+)+\s+.+", s):
+        return True
+    if re.match(r"^[A-Z][A-Z0-9 _/\-(),'’.:;]{5,}$", s) and any(c.isalpha() for c in s):
+        return True
+    return False
+
+
+def split_txt_documents_by_headings(documents):
+    """Convert TXT docs into section documents that preserve heading context."""
+    section_docs = []
+    for doc in documents:
+        source = str(doc.metadata.get("source", ""))
+        if not source.lower().endswith(".txt"):
+            section_docs.append(doc)
+            continue
+
+        current_headings = []
+        current_lines = []
+
+        def flush():
+            nonlocal current_headings, current_lines
+            body = "\n".join(current_lines).strip()
+            if body:
+                heading = " | ".join(current_headings) if current_headings else "UNTITLED"
+                section_docs.append(
+                    Document(
+                        page_content=body,
+                        metadata={**doc.metadata, "section_heading": heading},
+                    )
+                )
+            current_headings = []
+            current_lines = []
+
+        for raw_line in doc.page_content.splitlines():
+            line = raw_line.rstrip()
+            if is_heading_line(line):
+                if current_lines:
+                    flush()
+                if current_headings:
+                    if line.strip() not in current_headings:
+                        current_headings.append(line.strip())
+                else:
+                    current_headings = [line.strip()]
+            else:
+                current_lines.append(line)
+
+        flush()
+
+    return section_docs
+
 def split_documents(documents):
+    documents = split_txt_documents_by_headings(documents)
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
         separators=["\n\n", "\n", ". ", " ", ""],
     )
-    chunks = splitter.split_documents(documents)
+    raw_chunks = splitter.split_documents(documents)
+
+    chunks = []
+    for chunk in raw_chunks:
+        heading = chunk.metadata.get("section_heading")
+        if heading:
+            chunk.page_content = f"{heading}\n\n{chunk.page_content}"
+        chunks.append(chunk)
     return chunks
 
 
@@ -107,6 +173,12 @@ def main():
 
     vectorstore.save_local(FAISS_DIR)
     print(f"\n\n  FAISS index saved to '{FAISS_DIR}/'")
+
+    # Save chunks for BM25 retriever
+    import pickle
+    with open(os.path.join(FAISS_DIR, "chunks.pkl"), "wb") as f:
+        pickle.dump(chunks, f)
+    print(f"  Chunks saved for BM25 retriever")
 
     # Sanity check
     print("\n[TEST] Running a test retrieval query...")
