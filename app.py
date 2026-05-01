@@ -36,7 +36,7 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    st.caption("Powered by GPT-4o-mini + ChromaDB + sentence-transformers")
+    st.caption("Powered by GPT-4o-mini + FAISS + sentence-transformers")
 
 # ── Session state ─────────────────────────────────────────────────────────────
 if "messages" not in st.session_state:
@@ -54,7 +54,7 @@ try:
     chain = load_chain()
 except Exception as e:
     st.error(f"**Failed to load the chain:** {e}")
-    st.info("Make sure `OPENAI_API_KEY` is set and `chroma_db/` exists (run `python ingest.py` first).")
+    st.info("Make sure `OPENAI_API_KEY` is set and `faiss_index/` exists (run `python ingest.py` first).")
     st.stop()
 
 # ── Header ────────────────────────────────────────────────────────────────────
