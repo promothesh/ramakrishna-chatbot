@@ -15,6 +15,15 @@ env/
 # Debug / one-off scripts
 debug_page.py
 check_archive.py
+debug_mother.py
+inspect_context.py
+test_chain.py
+
+# Baseline / experimental index copies
+faiss_index_baseline/
+
+# Misc temp files
+*.gz
 
 # OS
 .DS_Store
